@@ -1,0 +1,20 @@
+[Unit]
+Description=Prometheus Monitoring
+Wants=network-online.target
+After=network-online.target mongodb_exporter.service
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+
+ExecStart=/usr/local/bin/prometheus \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/var/lib/prometheus \
+  --web.listen-address=0.0.0.0:9090
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
