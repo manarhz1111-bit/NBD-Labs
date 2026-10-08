@@ -1,0 +1,121 @@
+---
+- name: Generate timestamp for first retained backup
+  ansible.builtin.command:
+    argv:
+      - date
+      - "+%Y%m%d_%H%M%S_%3N"
+  register: retained_backup_timestamp_1
+  changed_when: false
+
+- name: Define first retained backup path
+  ansible.builtin.set_fact:
+    retained_backup_1: >-
+      {{ mongodb_backup_root }}/retained-{{ mongodb_training_db }}-{{ retained_backup_timestamp_1.stdout }}.archive.gz
+
+- name: Create first retained backup
+  block:
+    - name: Create secure temporary MongoDB credential file for first backup
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Run first retained mongodump
+      ansible.builtin.command:
+        argv:
+          - mongodump
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--db={{ mongodb_training_db }}"
+          - "--archive={{ retained_backup_1 }}"
+          - --gzip
+
+  always:
+    - name: Remove temporary credential file after first backup
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true
+
+- name: Wait before creating the next retained backup
+  ansible.builtin.pause:
+    seconds: 1
+
+- name: Generate timestamp for second retained backup
+  ansible.builtin.command:
+    argv:
+      - date
+      - "+%Y%m%d_%H%M%S_%3N"
+  register: retained_backup_timestamp_2
+  changed_when: false
+
+- name: Define second retained backup path
+  ansible.builtin.set_fact:
+    retained_backup_2: >-
+      {{ mongodb_backup_root }}/retained-{{ mongodb_training_db }}-{{ retained_backup_timestamp_2.stdout }}.archive.gz
+
+- name: Create second retained backup
+  block:
+    - name: Create secure temporary MongoDB credential file for second backup
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Run second retained mongodump
+      ansible.builtin.command:
+        argv:
+          - mongodump
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--db={{ mongodb_training_db }}"
+          - "--archive={{ retained_backup_2 }}"
+          - --gzip
+
+  always:
+    - name: Remove temporary credential file after second backup
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true
+
+- name: Check first retained backup
+  ansible.builtin.stat:
+    path: "{{ retained_backup_1 }}"
+  register: retained_backup_1_stat
+
+- name: Check second retained backup
+  ansible.builtin.stat:
+    path: "{{ retained_backup_2 }}"
+  register: retained_backup_2_stat
+
+- name: Verify backups were retained independently
+  ansible.builtin.assert:
+    that:
+      - retained_backup_1 != retained_backup_2
+      - retained_backup_1_stat.stat.exists
+      - retained_backup_2_stat.stat.exists
+      - retained_backup_1_stat.stat.size | int > 0
+      - retained_backup_2_stat.stat.size | int > 0
+    success_msg: "MULTIPLE BACKUPS VERIFIED: new backup did NOT overwrite the previous backup"
+
+- name: Report retained backups
+  ansible.builtin.debug:
+    msg:
+      - "Previous backup preserved: {{ retained_backup_1 }}"
+      - "New backup created: {{ retained_backup_2 }}"
+      - "Both backup archives exist independently"

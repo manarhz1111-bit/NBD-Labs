@@ -1,0 +1,12 @@
+---
+- name: Create MongoDB backup root directory
+  ansible.builtin.file:
+    path: "{{ mongodb_backup_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Report backup directory
+  ansible.builtin.debug:
+    msg: "MongoDB backup directory is ready: {{ mongodb_backup_root }}"

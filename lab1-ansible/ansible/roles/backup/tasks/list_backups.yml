@@ -1,0 +1,23 @@
+---
+- name: Find existing backup archives
+  ansible.builtin.find:
+    paths: "{{ mongodb_backup_root }}"
+    patterns: "*.archive.gz"
+    recurse: true
+  register: backup_archives
+
+- name: Report existing backup archives (oldest first)
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        backup_archives.files
+        | sort(attribute='mtime')
+        | map(attribute='path')
+        | zip(backup_archives.files | sort(attribute='mtime') | map(attribute='size'))
+        | map('join', '  ')
+        | list
+      }}
+
+- name: Report backup count
+  ansible.builtin.debug:
+    msg: "{{ backup_archives.matched }} archive(s) kept in {{ mongodb_backup_root }}; none of them was overwritten"

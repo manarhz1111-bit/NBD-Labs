@@ -1,0 +1,102 @@
+---
+# Behavioural proof that the custom roles grant different sets of operations:
+# every user tries one operation its role allows and one it does not.
+
+- name: Run permission checks as each training user
+  ansible.builtin.command:
+    argv:
+      - mongosh
+      - --quiet
+      - --host
+      - "127.0.0.1"
+      - --port
+      - "{{ mongodb_port | string }}"
+      - --username
+      - "{{ item.user }}"
+      - --password
+      - "{{ item.password }}"
+      - --authenticationDatabase
+      - admin
+      - "{{ item.db }}"
+      - --eval
+      - |
+        try {
+          {{ item.js }}
+          print("RESULT=ALLOWED");
+        } catch (e) {
+          print("RESULT=DENIED code=" + e.code);
+        }
+  loop:
+    - name: "{{ mongodb_reader_user }} reads {{ mongodb_training_db }}.students"
+      user: "{{ mongodb_reader_user }}"
+      password: "{{ vault_reader_password }}"
+      db: "{{ mongodb_training_db }}"
+      js: "db.students.findOne();"
+      expected: ALLOWED
+    - name: "{{ mongodb_reader_user }} inserts into {{ mongodb_training_db }}.students"
+      user: "{{ mongodb_reader_user }}"
+      password: "{{ vault_reader_password }}"
+      db: "{{ mongodb_training_db }}"
+      js: "db.students.insertOne({ _probe: true });"
+      expected: DENIED
+    - name: "{{ mongodb_writer_user }} inserts and removes in {{ mongodb_training_db }}.students"
+      user: "{{ mongodb_writer_user }}"
+      password: "{{ vault_writer_password }}"
+      db: "{{ mongodb_training_db }}"
+      js: "const r = db.students.insertOne({ _probe: true }); db.students.deleteOne({ _id: r.insertedId });"
+      expected: ALLOWED
+    - name: "{{ mongodb_writer_user }} creates an index on {{ mongodb_training_db }}.grades"
+      user: "{{ mongodb_writer_user }}"
+      password: "{{ vault_writer_password }}"
+      db: "{{ mongodb_training_db }}"
+      js: "db.grades.createIndex({ grade: 1 });"
+      expected: DENIED
+    - name: "{{ mongodb_library_user }} updates {{ mongodb_library_db }}.books"
+      user: "{{ mongodb_library_user }}"
+      password: "{{ vault_library_password }}"
+      db: "{{ mongodb_library_db }}"
+      js: "db.books.updateOne({ isbn: 'LAB1-001' }, { $set: { available: true } });"
+      expected: ALLOWED
+    - name: "{{ mongodb_library_user }} reads {{ mongodb_training_db }}.students"
+      user: "{{ mongodb_library_user }}"
+      password: "{{ vault_library_password }}"
+      db: "{{ mongodb_training_db }}"
+      js: "db.students.findOne();"
+      expected: DENIED
+  loop_control:
+    label: "{{ item.name }} (expected {{ item.expected }})"
+  register: permission_checks
+  changed_when: false
+  no_log: true
+
+- name: Summarise permission checks without credentials
+  ansible.builtin.set_fact:
+    permission_summary: >-
+      {{
+        permission_summary | default([])
+        + [{
+            'check': item.item.name,
+            'expected': item.item.expected,
+            'actual': ('ALLOWED' if 'RESULT=ALLOWED' in item.stdout
+                       else ('DENIED' if 'RESULT=DENIED' in item.stdout else 'ERROR'))
+          }]
+      }}
+  loop: "{{ permission_checks.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  no_log: true
+
+- name: Verify each permission check gave the expected result
+  ansible.builtin.assert:
+    that:
+      - item.actual == item.expected
+    success_msg: "{{ item.check }}: {{ item.actual }} as expected"
+    fail_msg: "{{ item.check }}: expected {{ item.expected }}, got {{ item.actual }}"
+    quiet: true
+  loop: "{{ permission_summary }}"
+  loop_control:
+    label: "{{ item.check }}"
+
+- name: Report permission matrix
+  ansible.builtin.debug:
+    msg: "{{ permission_summary | map(attribute='check') | zip(permission_summary | map(attribute='actual')) | map('join', ' -> ') | list }}"

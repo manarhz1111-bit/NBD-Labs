@@ -1,0 +1,94 @@
+---
+- name: Read university collections
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: "db.getCollectionNames().sort()"
+    stringify: true
+    transform: json
+  register: university_collections
+  changed_when: false
+  no_log: true
+
+- name: Read custom roles
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: "db.runCommand({rolesInfo: 1}).roles.map(r => r.role).sort()"
+    stringify: true
+    transform: json
+  register: custom_roles
+  changed_when: false
+  no_log: true
+
+- name: Read library custom roles
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_library_db }}"
+    eval: "db.runCommand({rolesInfo: 1}).roles.map(r => r.role).sort()"
+    stringify: true
+    transform: json
+  register: library_roles
+  changed_when: false
+  no_log: true
+
+- name: Read training users
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: admin
+    eval: "db.runCommand({usersInfo: 1}).users.map(u => u.user).sort()"
+    stringify: true
+    transform: json
+  register: training_users
+  changed_when: false
+  no_log: true
+
+- name: Verify university collections
+  ansible.builtin.assert:
+    that:
+      - "'students' in (university_collections.transformed_output | string)"
+      - "'courses' in (university_collections.transformed_output | string)"
+      - "'grades' in (university_collections.transformed_output | string)"
+    success_msg: "Training collections VERIFIED: students, courses, grades"
+
+- name: Verify custom roles
+  ansible.builtin.assert:
+    that:
+      - "mongodb_reader_role in (custom_roles.transformed_output | string)"
+      - "mongodb_writer_role in (custom_roles.transformed_output | string)"
+      - "mongodb_mutable_role in (custom_roles.transformed_output | string)"
+      - "mongodb_library_role in (library_roles.transformed_output | string)"
+    success_msg: "Custom roles VERIFIED: {{ mongodb_reader_role }}, {{ mongodb_writer_role }}, {{ mongodb_mutable_role }} ({{ mongodb_training_db }}); {{ mongodb_library_role }} ({{ mongodb_library_db }})"
+
+- name: Verify training users
+  ansible.builtin.assert:
+    that:
+      - "mongodb_reader_user in (training_users.transformed_output | string)"
+      - "mongodb_writer_user in (training_users.transformed_output | string)"
+      - "mongodb_library_user in (training_users.transformed_output | string)"
+    success_msg: "Training users VERIFIED: {{ mongodb_reader_user }}, {{ mongodb_writer_user }}, {{ mongodb_library_user }}"
+
+- name: Report base RBAC verification
+  ansible.builtin.debug:
+    msg:
+      - "Database: {{ mongodb_training_db }}"
+      - "Collections: students, courses, grades"
+      - "Roles on {{ mongodb_training_db }}: {{ mongodb_reader_role }}, {{ mongodb_writer_role }}, {{ mongodb_mutable_role }}"
+      - "Roles on {{ mongodb_library_db }}: {{ mongodb_library_role }}"
+      - "Users: {{ mongodb_reader_user }}, {{ mongodb_writer_user }}, {{ mongodb_library_user }}"

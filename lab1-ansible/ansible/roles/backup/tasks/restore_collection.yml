@@ -1,0 +1,160 @@
+---
+- name: Read students document count before recovery demonstration
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: "db.students.countDocuments()"
+    stringify: true
+    transform: json
+  register: students_count_before
+  changed_when: false
+  no_log: true
+
+- name: Verify students collection contains data before backup
+  ansible.builtin.assert:
+    that:
+      - students_count_before.transformed_output | int > 0
+    success_msg: "PRE-RESTORE VERIFIED: students collection exists and contains data"
+
+- name: Generate timestamp for recovery backup
+  ansible.builtin.command:
+    argv:
+      - date
+      - "+%Y%m%d_%H%M%S_%3N"
+  register: recovery_backup_timestamp
+  changed_when: false
+
+- name: Define recovery backup archive path
+  ansible.builtin.set_fact:
+    mongodb_recovery_archive: >-
+      {{ mongodb_backup_root }}/recovery-{{ mongodb_training_db }}-{{ recovery_backup_timestamp.stdout }}.archive.gz
+
+- name: Create recovery backup and restore deleted collection
+  block:
+    - name: Create secure temporary MongoDB tools credential file
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Create recovery backup before deleting collection
+      ansible.builtin.command:
+        argv:
+          - mongodump
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--db={{ mongodb_training_db }}"
+          - "--archive={{ mongodb_recovery_archive }}"
+          - --gzip
+
+    - name: Verify recovery archive is readable
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ mongodb_recovery_archive }}"
+          - --gzip
+          - "--nsInclude={{ mongodb_training_db }}.students"
+          - --dryRun
+      changed_when: false
+
+    - name: Delete students collection
+      community.mongodb.mongodb_shell:
+        login_host: "127.0.0.1"
+        login_port: "{{ mongodb_port }}"
+        login_database: admin
+        login_user: "{{ mongodb_admin_user }}"
+        login_password: "{{ vault_mongodb_admin_password }}"
+        db: "{{ mongodb_training_db }}"
+        eval: 'db.students.drop()'
+        stringify: true
+        transform: json
+      no_log: true
+
+    - name: Check students collection after deletion
+      community.mongodb.mongodb_shell:
+        login_host: "127.0.0.1"
+        login_port: "{{ mongodb_port }}"
+        login_database: admin
+        login_user: "{{ mongodb_admin_user }}"
+        login_password: "{{ vault_mongodb_admin_password }}"
+        db: "{{ mongodb_training_db }}"
+        eval: 'db.getCollectionNames().includes("students")'
+        stringify: true
+        transform: json
+      register: students_exists_after_delete
+      changed_when: false
+      no_log: true
+
+    - name: Verify students collection was deleted
+      ansible.builtin.assert:
+        that:
+          - not (students_exists_after_delete.transformed_output | bool)
+        success_msg: "DELETE VERIFIED: students collection no longer exists"
+
+    - name: Restore students collection from recovery backup
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ mongodb_recovery_archive }}"
+          - --gzip
+          - "--nsInclude={{ mongodb_training_db }}.students"
+      register: students_restore_result
+
+    - name: Read students document count after restore
+      community.mongodb.mongodb_shell:
+        login_host: "127.0.0.1"
+        login_port: "{{ mongodb_port }}"
+        login_database: admin
+        login_user: "{{ mongodb_admin_user }}"
+        login_password: "{{ vault_mongodb_admin_password }}"
+        db: "{{ mongodb_training_db }}"
+        eval: "db.students.countDocuments()"
+        stringify: true
+        transform: json
+      register: students_count_after
+      changed_when: false
+      no_log: true
+
+    - name: Verify students collection was restored
+      ansible.builtin.assert:
+        that:
+          - students_count_after.transformed_output | int > 0
+          - students_count_after.transformed_output | int == students_count_before.transformed_output | int
+        success_msg: "RESTORE VERIFIED: students collection and its data were recovered"
+
+    - name: Report collection recovery result
+      ansible.builtin.debug:
+        msg:
+          - "Recovery archive: {{ mongodb_recovery_archive }}"
+          - "Deleted collection: {{ mongodb_training_db }}.students"
+          - "Documents before deletion: {{ students_count_before.transformed_output }}"
+          - "Documents after restore: {{ students_count_after.transformed_output }}"
+          - "Collection recovery completed successfully by Ansible"
+
+  always:
+    - name: Remove temporary MongoDB tools credential file
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true

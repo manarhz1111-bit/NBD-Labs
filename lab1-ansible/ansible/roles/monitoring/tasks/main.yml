@@ -1,0 +1,30 @@
+---
+- name: Configure MongoDB monitoring user
+  ansible.builtin.import_tasks: monitor_user.yml
+  tags:
+    - part4
+    - part4_monitor_user
+
+- name: Install and configure Percona MongoDB Exporter
+  ansible.builtin.import_tasks: exporter.yml
+  tags:
+    - part4
+    - part4_exporter
+
+- name: Install and configure Prometheus
+  ansible.builtin.import_tasks: prometheus.yml
+  tags:
+    - part4
+    - part4_prometheus
+
+- name: Install and provision Grafana
+  ansible.builtin.import_tasks: grafana.yml
+  tags:
+    - part4
+    - part4_grafana
+
+- name: Generate MongoDB monitoring workload
+  ansible.builtin.import_tasks: load.yml
+  tags:
+    - part4
+    - part4_load

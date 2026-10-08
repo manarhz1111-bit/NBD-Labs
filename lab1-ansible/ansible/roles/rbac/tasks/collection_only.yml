@@ -1,0 +1,110 @@
+---
+- name: Create students-only collection role
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_students_only_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: "students"
+        actions:
+          - find
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Create students-only user
+  community.mongodb.mongodb_user:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: admin
+    name: "{{ mongodb_students_user }}"
+    password: "{{ vault_students_password }}"
+    roles:
+      - db: "{{ mongodb_training_db }}"
+        role: "{{ mongodb_students_only_role }}"
+    state: present
+    update_password: on_create
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Verify students collection access is allowed
+  ansible.builtin.command:
+    argv:
+      - mongosh
+      - --quiet
+      - --host
+      - "127.0.0.1"
+      - --port
+      - "{{ mongodb_port | string }}"
+      - --username
+      - "{{ mongodb_students_user }}"
+      - --password
+      - "{{ vault_students_password }}"
+      - --authenticationDatabase
+      - admin
+      - "{{ mongodb_training_db }}"
+      - --eval
+      - 'const doc = db.students.findOne(); print("STUDENTS_ACCESS_ALLOWED found=" + (doc !== null));'
+  register: students_allowed
+  changed_when: false
+  no_log: true
+
+- name: Verify students access result
+  ansible.builtin.assert:
+    that:
+      - "'STUDENTS_ACCESS_ALLOWED' in students_allowed.stdout"
+    success_msg: "COLLECTION ACCESS VERIFIED: students collection is ALLOWED"
+
+- name: Test access to courses collection
+  ansible.builtin.command:
+    argv:
+      - mongosh
+      - --quiet
+      - --host
+      - "127.0.0.1"
+      - --port
+      - "{{ mongodb_port | string }}"
+      - --username
+      - "{{ mongodb_students_user }}"
+      - --password
+      - "{{ vault_students_password }}"
+      - --authenticationDatabase
+      - admin
+      - "{{ mongodb_training_db }}"
+      - --eval
+      - |
+        try {
+          db.courses.findOne();
+          print("COURSES_ACCESS_UNEXPECTED");
+        } catch (e) {
+          print("COURSES_ACCESS_DENIED");
+        }
+  register: courses_denied
+  changed_when: false
+  no_log: true
+
+- name: Verify courses access is denied
+  ansible.builtin.assert:
+    that:
+      - "'COURSES_ACCESS_DENIED' in courses_denied.stdout"
+      - "'COURSES_ACCESS_UNEXPECTED' not in courses_denied.stdout"
+    success_msg: "COLLECTION RESTRICTION VERIFIED: courses collection is DENIED"
+
+- name: Report collection-only access
+  ansible.builtin.debug:
+    msg:
+      - "User: {{ mongodb_students_user }}"
+      - "Allowed collection: {{ mongodb_training_db }}.students"
+      - "Denied collection: {{ mongodb_training_db }}.courses"

@@ -1,0 +1,60 @@
+#!/opt/ansible-mongodb/bin/python
+
+import os
+import time
+from datetime import datetime, timezone
+
+from pymongo import MongoClient
+
+host = os.environ.get("MONGODB_HOST", "127.0.0.1")
+port = int(os.environ.get("MONGODB_PORT", "27017"))
+username = os.environ["MONGODB_USER"]
+password = os.environ["MONGODB_PASSWORD"]
+database = os.environ.get("MONGODB_DATABASE", "lab1_university_ansible")
+duration = int(os.environ.get("LOAD_DURATION", "120"))
+
+client = MongoClient(
+    host=host,
+    port=port,
+    username=username,
+    password=password,
+    authSource="admin",
+)
+
+db = client[database]
+collection = db["load_test"]
+
+payload = "X" * 4096
+start = time.time()
+counter = 0
+
+print(f"Starting MongoDB load test for {duration} seconds", flush=True)
+
+while time.time() - start < duration:
+    for _ in range(20):
+        document_id = counter % 2000
+
+        collection.update_one(
+            {"_id": document_id},
+            {
+                "$set": {
+                    "counter": counter,
+                    "timestamp": datetime.now(timezone.utc),
+                    "payload": payload,
+                }
+            },
+            upsert=True,
+        )
+
+        collection.find_one({"_id": document_id})
+
+        if counter % 5 == 0:
+            collection.delete_one({"_id": (document_id + 1000) % 2000})
+
+        counter += 1
+
+    time.sleep(0.05)
+
+print(f"MongoDB load test completed. Iterations: {counter}", flush=True)
+
+client.close()

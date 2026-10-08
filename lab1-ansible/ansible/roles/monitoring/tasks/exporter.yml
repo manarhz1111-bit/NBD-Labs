@@ -1,0 +1,105 @@
+---
+- name: Download Percona MongoDB Exporter {{ mongodb_exporter_version }} package
+  ansible.builtin.get_url:
+    url: "https://github.com/percona/mongodb_exporter/releases/download/v{{ mongodb_exporter_version }}/mongodb_exporter-{{ mongodb_exporter_version }}.linux-64-bit.deb"
+    dest: "/tmp/mongodb_exporter-{{ mongodb_exporter_version }}.deb"
+    checksum: "sha256:dec9ae6e1a6138c21c9fdce68fc27dd4b8146ec9b47fa99be1871bfb02b58f92"
+    mode: "0644"
+
+- name: Install Percona MongoDB Exporter package
+  ansible.builtin.apt:
+    deb: "/tmp/mongodb_exporter-{{ mongodb_exporter_version }}.deb"
+    state: present
+
+- name: Ensure mongodb_exporter system group exists
+  ansible.builtin.group:
+    name: mongodb_exporter
+    system: true
+    state: present
+
+- name: Ensure mongodb_exporter system user exists
+  ansible.builtin.user:
+    name: mongodb_exporter
+    group: mongodb_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+
+- name: Deploy secure MongoDB Exporter environment
+  ansible.builtin.template:
+    src: mongodb_exporter.env.j2
+    dest: /etc/default/mongodb_exporter-lab1
+    owner: root
+    group: mongodb_exporter
+    mode: "0640"
+  no_log: true
+  notify: Restart MongoDB Exporter
+
+- name: Deploy MongoDB Exporter systemd service
+  ansible.builtin.template:
+    src: mongodb_exporter.service.j2
+    dest: /etc/systemd/system/mongodb_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart MongoDB Exporter
+
+- name: Enable and start MongoDB Exporter
+  ansible.builtin.systemd_service:
+    name: mongodb_exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply MongoDB Exporter handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for MongoDB Exporter port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ mongodb_exporter_port }}"
+    state: started
+    timeout: 30
+
+- name: Query MongoDB Exporter metrics endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ mongodb_exporter_port }}/metrics"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: exporter_metrics
+  until:
+    - exporter_metrics.status == 200
+    - "'mongodb_ss_connections' in exporter_metrics.content"
+  retries: 10
+  delay: 2
+- name: Verify MongoDB metrics are exposed
+  ansible.builtin.assert:
+    that:
+      - "'mongodb_' in exporter_metrics.content"
+    success_msg: "EXPORTER VERIFIED: MongoDB metrics are exposed on port {{ mongodb_exporter_port }}"
+    fail_msg: "MongoDB Exporter is running but MongoDB metrics were not found"
+
+- name: Report which dashboard metrics the exporter provides
+  ansible.builtin.debug:
+    msg: "{{ item }}: {{ 'PRESENT' if item in exporter_metrics.content else 'MISSING' }}"
+  loop:
+    - mongodb_ss_connections
+    - mongodb_ss_opcounters
+    - mongodb_ss_network_bytesIn
+    - mongodb_ss_network_bytesOut
+    - mongodb_ss_wt_cache_bytes_currently_in_the_cache
+    - mongodb_ss_wt_cache_maximum_bytes_configured
+    - mongodb_ss_opLatencies_latency
+    - mongodb_ss_opLatencies_ops
+    - mongodb_ss_metrics_document
+
+- name: Report MongoDB Exporter status
+  ansible.builtin.debug:
+    msg:
+      - "Percona MongoDB Exporter version: {{ mongodb_exporter_version }}"
+      - "Metrics endpoint: http://127.0.0.1:{{ mongodb_exporter_port }}/metrics"
+      - "MongoDB Exporter service is ACTIVE and ENABLED"

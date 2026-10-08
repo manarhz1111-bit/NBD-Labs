@@ -1,0 +1,93 @@
+---
+- name: Create read-only custom role
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_reader_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: ""
+        actions:
+          - find
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Create writer custom role
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_writer_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: ""
+        actions:
+          - find
+          - insert
+          - update
+          - remove
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Create mutable role with initial read-only permissions
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_mutable_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: ""
+        actions:
+          - find
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Create library custom role
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_library_db }}"
+    name: "{{ mongodb_library_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_library_db }}"
+          collection: ""
+        actions:
+          - find
+          - insert
+          - update
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Report custom roles creation
+  ansible.builtin.debug:
+    msg: "Custom MongoDB roles were created by Ansible"

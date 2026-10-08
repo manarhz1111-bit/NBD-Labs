@@ -1,0 +1,15 @@
+---
+- name: Install Python packages required for MongoDB Ansible modules
+  ansible.builtin.apt:
+    name:
+      - python3-pip
+      - python3.12-venv
+    state: present
+    update_cache: true
+
+- name: Install fully MongoDB 9.0 compatible PyMongo in isolated environment
+  ansible.builtin.pip:
+    name: "pymongo==4.18.2"
+    state: present
+    virtualenv: /opt/ansible-mongodb
+    virtualenv_command: /usr/bin/python3.12 -m venv

@@ -1,0 +1,140 @@
+---
+- name: Install Grafana package prerequisites
+  ansible.builtin.apt:
+    name:
+      - adduser
+      - libfontconfig1
+      - musl
+    state: present
+    update_cache: true
+
+- name: Download Grafana OSS {{ grafana_version }}
+  ansible.builtin.get_url:
+    url: "https://dl.grafana.com/grafana/release/{{ grafana_version }}/grafana_{{ grafana_version }}_{{ grafana_build }}_linux_amd64.deb"
+    dest: "/tmp/grafana_{{ grafana_version }}_linux_amd64.deb"
+    checksum: "sha256:55ec511999f9c56f3c26b633d0dc31b750c77a682a5ef379edf0d3fe634a7a2f"
+    mode: "0644"
+
+- name: Install Grafana OSS
+  ansible.builtin.apt:
+    deb: "/tmp/grafana_{{ grafana_version }}_linux_amd64.deb"
+    state: present
+
+- name: Bind Grafana to localhost
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: '^;?http_addr ='
+    line: 'http_addr = 127.0.0.1'
+  notify: Restart Grafana
+
+- name: Configure Grafana port
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: '^;?http_port ='
+    line: 'http_port = {{ grafana_port }}'
+  notify: Restart Grafana
+
+- name: Ensure Grafana datasource provisioning directory exists
+  ansible.builtin.file:
+    path: /etc/grafana/provisioning/datasources
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+
+- name: Ensure Grafana dashboard provisioning directory exists
+  ansible.builtin.file:
+    path: /etc/grafana/provisioning/dashboards
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+
+- name: Ensure Grafana dashboard storage directory exists
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: prometheus-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus-lab1.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision MongoDB dashboard provider
+  ansible.builtin.template:
+    src: dashboard-provider.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/nbd-lab1.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision MongoDB monitoring dashboard
+  ansible.builtin.template:
+    src: mongodb-dashboard.json.j2
+    dest: /var/lib/grafana/dashboards/nbd-lab1-mongodb.json
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    enabled: true
+    state: started
+
+- name: Apply Grafana handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Grafana port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ grafana_port }}"
+    state: started
+    timeout: 60
+
+- name: Query Grafana health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+    status_code: 200
+    return_content: true
+  register: grafana_health
+
+- name: Verify Grafana health
+  ansible.builtin.assert:
+    that:
+      - "'ok' in grafana_health.content"
+    success_msg: "GRAFANA VERIFIED: service is healthy on port {{ grafana_port }}"
+
+- name: Verify Grafana provisioned files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/grafana/provisioning/datasources/prometheus-lab1.yml
+    - /etc/grafana/provisioning/dashboards/nbd-lab1.yml
+    - /var/lib/grafana/dashboards/nbd-lab1-mongodb.json
+  register: grafana_provisioned_files
+
+- name: Assert Grafana provisioning files exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    success_msg: "Grafana provisioning file VERIFIED: {{ item.item }}"
+  loop: "{{ grafana_provisioned_files.results }}"
+
+- name: Report Grafana status
+  ansible.builtin.debug:
+    msg:
+      - "Grafana OSS version: {{ grafana_version }}"
+      - "Grafana URL: http://127.0.0.1:{{ grafana_port }}"
+      - "Prometheus datasource provisioned automatically"
+      - "MongoDB dashboard provisioned automatically"
+      - "Grafana service is ACTIVE and ENABLED"

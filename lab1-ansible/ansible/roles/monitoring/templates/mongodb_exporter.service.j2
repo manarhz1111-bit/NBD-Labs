@@ -1,0 +1,26 @@
+[Unit]
+Description=Percona MongoDB Exporter - NBD Lab 1
+Documentation=https://github.com/percona/mongodb_exporter
+Wants=network-online.target
+After=network-online.target mongod.service
+
+[Service]
+Type=simple
+User=mongodb_exporter
+Group=mongodb_exporter
+
+EnvironmentFile=/etc/default/mongodb_exporter-lab1
+
+ExecStart=/usr/bin/mongodb_exporter \
+  --web.listen-address=127.0.0.1:{{ mongodb_exporter_port }} \
+  --collect-all \
+  --compatible-mode
+
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

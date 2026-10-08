@@ -1,0 +1,13 @@
+---
+# Template for group_vars/all/vault.yml.
+# Copy, fill in real passwords, then encrypt:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+vault_mongodb_admin_password: "CHANGE_ME"
+vault_reader_password: "CHANGE_ME"
+vault_writer_password: "CHANGE_ME"
+vault_library_password: "CHANGE_ME"
+vault_grant_demo_password: "CHANGE_ME"
+vault_students_password: "CHANGE_ME"
+vault_temp_password: "CHANGE_ME"
+vault_monitor_password: "CHANGE_ME"

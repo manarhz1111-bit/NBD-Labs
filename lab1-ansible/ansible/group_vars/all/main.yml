@@ -1,0 +1,50 @@
+---
+mongodb_major_version: "9.0"
+mongodb_apt_distribution: "jammy"
+
+mongodb_port: 27017
+mongodb_bind_ip: "127.0.0.1"
+
+mongodb_db_path: "/var/lib/mongodb"
+mongodb_log_path: "/var/log/mongodb/mongod.log"
+mongodb_admin_user: "lab1AnsibleAdmin"
+mongodb_admin_marker_path: "{{ mongodb_db_path }}/.lab1_ansible_admin_created"
+mongodb_authorization_enabled: true
+mongodb_training_db: "lab1_university_ansible"
+mongodb_library_db: "lab1_library_ansible"
+
+mongodb_reader_role: "lab1ReaderRole"
+mongodb_writer_role: "lab1WriterRole"
+mongodb_library_role: "lab1LibraryRole"
+mongodb_mutable_role: "lab1MutableRole"
+
+mongodb_reader_user: "lab1ReaderUser"
+mongodb_writer_user: "lab1WriterUser"
+mongodb_library_user: "lab1LibrarianUser"
+
+mongodb_grant_demo_user: "lab1GrantDemoUser"
+
+mongodb_students_only_role: "lab1StudentsOnlyRole"
+mongodb_students_user: "lab1StudentsUser"
+
+mongodb_temp_role: "lab1TempRole"
+mongodb_temp_user: "lab1TempUser"
+
+mongodb_backup_root: "/var/backups/mongodb/lab1_ansible"
+mongodb_training_databases:
+  - "{{ mongodb_training_db }}"
+  - "{{ mongodb_library_db }}"
+
+mongodb_monitor_user: "lab1Monitor"
+
+mongodb_exporter_version: "0.53.0"
+mongodb_exporter_port: 9216
+
+mongodb_load_duration: 120
+
+prometheus_version: "3.15.0"
+prometheus_port: 9090
+
+grafana_version: "13.2.3"
+grafana_build: "36482603486"
+grafana_port: 3000

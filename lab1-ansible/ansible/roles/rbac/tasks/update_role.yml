@@ -1,0 +1,112 @@
+---
+- name: Reset mutable role to its initial read-only definition
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_mutable_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: ""
+        actions:
+          - find
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Read mutable role privileges before update
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: >-
+      db.runCommand({
+        rolesInfo: {
+          role: "{{ mongodb_mutable_role }}",
+          db: "{{ mongodb_training_db }}"
+        },
+        showPrivileges: true
+      }).roles[0].privileges
+        .flatMap(p => p.actions)
+        .sort()
+    stringify: true
+    transform: json
+  register: mutable_role_before
+  changed_when: false
+  no_log: true
+
+- name: Verify mutable role initially has read-only permissions
+  ansible.builtin.assert:
+    that:
+      - "'find' in (mutable_role_before.transformed_output | string)"
+      - "'insert' not in (mutable_role_before.transformed_output | string)"
+      - "'update' not in (mutable_role_before.transformed_output | string)"
+    success_msg: "BEFORE UPDATE VERIFIED: lab1MutableRole has find permission only"
+
+- name: Update existing mutable role privileges
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_mutable_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: ""
+        actions:
+          - find
+          - insert
+          - update
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Read mutable role privileges after update
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: >-
+      db.runCommand({
+        rolesInfo: {
+          role: "{{ mongodb_mutable_role }}",
+          db: "{{ mongodb_training_db }}"
+        },
+        showPrivileges: true
+      }).roles[0].privileges
+        .flatMap(p => p.actions)
+        .sort()
+    stringify: true
+    transform: json
+  register: mutable_role_after
+  changed_when: false
+  no_log: true
+
+- name: Verify mutable role privileges were updated
+  ansible.builtin.assert:
+    that:
+      - "'find' in (mutable_role_after.transformed_output | string)"
+      - "'insert' in (mutable_role_after.transformed_output | string)"
+      - "'update' in (mutable_role_after.transformed_output | string)"
+    success_msg: "ROLE UPDATE VERIFIED: lab1MutableRole now has find, insert and update permissions"
+
+- name: Report role update result
+  ansible.builtin.debug:
+    msg: "Existing role {{ mongodb_mutable_role }} was modified by Ansible"

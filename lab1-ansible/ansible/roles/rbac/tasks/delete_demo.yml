@@ -1,0 +1,167 @@
+---
+- name: Create temporary role for deletion demonstration
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_temp_role }}"
+    privileges:
+      - resource:
+          db: "{{ mongodb_training_db }}"
+          collection: "students"
+        actions:
+          - find
+    roles: []
+    state: present
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Create temporary user for deletion demonstration
+  community.mongodb.mongodb_user:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: admin
+    name: "{{ mongodb_temp_user }}"
+    password: "{{ vault_temp_password }}"
+    roles:
+      - db: "{{ mongodb_training_db }}"
+        role: "{{ mongodb_temp_role }}"
+    state: present
+    update_password: on_create
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Check temporary user before deletion
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: admin
+    eval: >-
+      db.runCommand({
+        usersInfo: {user: "{{ mongodb_temp_user }}", db: "admin"}
+      }).users.length
+    stringify: true
+    transform: json
+  register: temp_user_before
+  changed_when: false
+  no_log: true
+
+- name: Check temporary role before deletion
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: >-
+      db.runCommand({
+        rolesInfo: {
+          role: "{{ mongodb_temp_role }}",
+          db: "{{ mongodb_training_db }}"
+        }
+      }).roles.length
+    stringify: true
+    transform: json
+  register: temp_role_before
+  changed_when: false
+  no_log: true
+
+- name: Verify temporary objects exist before deletion
+  ansible.builtin.assert:
+    that:
+      - "'1' in (temp_user_before.transformed_output | string)"
+      - "'1' in (temp_role_before.transformed_output | string)"
+    success_msg: "DELETE PREPARATION VERIFIED: temporary user and role exist"
+
+- name: Delete temporary MongoDB user
+  community.mongodb.mongodb_user:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: admin
+    name: "{{ mongodb_temp_user }}"
+    state: absent
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Delete temporary MongoDB role
+  community.mongodb.mongodb_role:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    database: "{{ mongodb_training_db }}"
+    name: "{{ mongodb_temp_role }}"
+    state: absent
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Check temporary user after deletion
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: admin
+    eval: >-
+      db.runCommand({
+        usersInfo: {user: "{{ mongodb_temp_user }}", db: "admin"}
+      }).users.length
+    stringify: true
+    transform: json
+  register: temp_user_after
+  changed_when: false
+  no_log: true
+
+- name: Check temporary role after deletion
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ mongodb_training_db }}"
+    eval: >-
+      db.runCommand({
+        rolesInfo: {
+          role: "{{ mongodb_temp_role }}",
+          db: "{{ mongodb_training_db }}"
+        }
+      }).roles.length
+    stringify: true
+    transform: json
+  register: temp_role_after
+  changed_when: false
+  no_log: true
+
+- name: Verify temporary objects were deleted
+  ansible.builtin.assert:
+    that:
+      - "'0' in (temp_user_after.transformed_output | string)"
+      - "'0' in (temp_role_after.transformed_output | string)"
+    success_msg: "DELETE VERIFIED: temporary MongoDB user and role no longer exist"
+
+- name: Report deletion result
+  ansible.builtin.debug:
+    msg:
+      - "Deleted user: {{ mongodb_temp_user }}"
+      - "Deleted role: {{ mongodb_temp_role }}"
+      - "Deletion was performed and verified by Ansible"

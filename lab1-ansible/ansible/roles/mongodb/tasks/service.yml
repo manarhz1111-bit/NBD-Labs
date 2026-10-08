@@ -1,0 +1,59 @@
+---
+# Reusable service control. Run one operation at a time, for example:
+#   ansible-playbook lab1.yml --tags part1_service -e mongodb_service_action=stop
+# Allowed actions: start, stop, restart, status
+
+- name: Validate requested MongoDB service action
+  ansible.builtin.assert:
+    that:
+      - mongodb_service_action is defined
+      - mongodb_service_action in ['start', 'stop', 'restart', 'status']
+    fail_msg: "Pass -e mongodb_service_action=start|stop|restart|status"
+    success_msg: "Requested MongoDB service action: {{ mongodb_service_action | default('') }}"
+
+- name: Apply requested MongoDB service state
+  ansible.builtin.systemd_service:
+    name: mongod
+    state: "{{ {'start': 'started', 'stop': 'stopped', 'restart': 'restarted'}[mongodb_service_action] }}"
+  when: mongodb_service_action != 'status'
+
+- name: Wait for MongoDB to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ mongodb_bind_ip }}"
+    port: "{{ mongodb_port }}"
+    state: started
+    timeout: 30
+  when: mongodb_service_action in ['start', 'restart']
+
+- name: Wait for MongoDB port to close
+  ansible.builtin.wait_for:
+    host: "{{ mongodb_bind_ip }}"
+    port: "{{ mongodb_port }}"
+    state: stopped
+    timeout: 30
+  when: mongodb_service_action == 'stop'
+
+- name: Read MongoDB service state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - mongod
+      - --property=ActiveState,SubState,MainPID,ActiveEnterTimestamp,UnitFileState
+  register: mongodb_service_state
+  changed_when: false
+
+- name: Verify MongoDB service state matches the requested action
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('ActiveState=inactive' in mongodb_service_state.stdout)
+        if mongodb_service_action == 'stop' else
+        (('ActiveState=active' in mongodb_service_state.stdout)
+         if mongodb_service_action in ['start', 'restart'] else true)
+    success_msg: "MongoDB service action '{{ mongodb_service_action }}' VERIFIED"
+    fail_msg: "MongoDB service is not in the state expected after '{{ mongodb_service_action }}'"
+
+- name: Report MongoDB service state
+  ansible.builtin.debug:
+    msg: "{{ mongodb_service_state.stdout_lines }}"

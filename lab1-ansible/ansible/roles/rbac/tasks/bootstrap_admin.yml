@@ -1,0 +1,29 @@
+---
+- name: Create initial MongoDB administrator
+  community.mongodb.mongodb_user:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    database: admin
+    name: "{{ mongodb_admin_user }}"
+    password: "{{ vault_mongodb_admin_password }}"
+    roles:
+      - db: admin
+        role: root
+    state: present
+    update_password: always
+    create_for_localhost_exception: "{{ mongodb_admin_marker_path }}"
+  vars:
+    ansible_python_interpreter: /opt/ansible-mongodb/bin/python
+  no_log: true
+
+- name: Check administrator bootstrap marker
+  ansible.builtin.stat:
+    path: "{{ mongodb_admin_marker_path }}"
+  register: mongodb_admin_marker
+
+- name: Verify administrator creation
+  ansible.builtin.assert:
+    that:
+      - mongodb_admin_marker.stat.exists
+    success_msg: "Initial MongoDB administrator was created by Ansible"
+    fail_msg: "MongoDB administrator bootstrap FAILED"

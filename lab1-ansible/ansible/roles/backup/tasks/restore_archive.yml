@@ -1,0 +1,121 @@
+---
+# Reusable restore from any existing archive, for example:
+#   ansible-playbook lab1.yml --tags part3_restore_archive \
+#     -e restore_archive=/var/backups/mongodb/lab1_ansible/single-...archive.gz \
+#     -e restore_collection=students
+# Optional: -e restore_db=<database> (default: main training database)
+#           -e restore_drop=true  (replace the collection instead of only inserting missing documents)
+
+- name: Validate restore parameters
+  ansible.builtin.assert:
+    that:
+      - restore_archive is defined
+      - restore_archive | length > 0
+    fail_msg: "Pass -e restore_archive=<path to .archive.gz> (see --tags part3_list)"
+    success_msg: "Restore source: {{ restore_archive | default('') }}"
+
+- name: Define restore namespace
+  ansible.builtin.set_fact:
+    restore_db_effective: "{{ restore_db | default(mongodb_training_db) }}"
+    restore_namespace: >-
+      {{ restore_db | default(mongodb_training_db) }}.{{ restore_collection | default('*') }}
+
+- name: Check restore archive
+  ansible.builtin.stat:
+    path: "{{ restore_archive }}"
+  register: restore_archive_file
+
+- name: Verify restore archive exists
+  ansible.builtin.assert:
+    that:
+      - restore_archive_file.stat.exists
+      - restore_archive_file.stat.size | int > 0
+    fail_msg: "Archive not found or empty: {{ restore_archive }}"
+    success_msg: "Archive found ({{ restore_archive_file.stat.size | default(0) }} bytes)"
+
+- name: Read collections before restore
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ restore_db_effective }}"
+    eval: "db.getCollectionNames().sort().map(c => c + ':' + db.getCollection(c).countDocuments())"
+    stringify: true
+    transform: json
+  register: restore_state_before
+  changed_when: false
+  no_log: true
+
+- name: Restore from archive
+  block:
+    - name: Create secure temporary MongoDB tools credential file
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Validate archive with a dry run
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ restore_archive }}"
+          - --gzip
+          - "--nsInclude={{ restore_namespace }}"
+          - --dryRun
+      changed_when: false
+
+    - name: Restore selected namespace
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['mongorestore', '--host=127.0.0.1', '--port=' ~ mongodb_port,
+             '--username=' ~ mongodb_admin_user, '--authenticationDatabase=admin',
+             '--config=/run/lab1-mongodb-tools.yml',
+             '--archive=' ~ restore_archive, '--gzip',
+             '--nsInclude=' ~ restore_namespace]
+            + (['--drop'] if (restore_drop | default(false) | bool) else [])
+          }}
+      register: restore_result
+
+  always:
+    - name: Remove temporary MongoDB tools credential file
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true
+
+- name: Read collections after restore
+  community.mongodb.mongodb_shell:
+    login_host: "127.0.0.1"
+    login_port: "{{ mongodb_port }}"
+    login_database: admin
+    login_user: "{{ mongodb_admin_user }}"
+    login_password: "{{ vault_mongodb_admin_password }}"
+    db: "{{ restore_db_effective }}"
+    eval: "db.getCollectionNames().sort().map(c => c + ':' + db.getCollection(c).countDocuments())"
+    stringify: true
+    transform: json
+  register: restore_state_after
+  changed_when: false
+  no_log: true
+
+- name: Report restore result
+  ansible.builtin.debug:
+    msg:
+      - "Archive: {{ restore_archive }}"
+      - "Namespace: {{ restore_namespace }}"
+      - "Mode: {{ 'replace (--drop)' if (restore_drop | default(false) | bool) else 'insert missing documents only' }}"
+      - "Collections before (name:documents): {{ restore_state_before.transformed_output }}"
+      - "Collections after  (name:documents): {{ restore_state_after.transformed_output }}"
+      - "{{ (restore_result.stderr_lines | default([]))[-1:] | join('') }}"

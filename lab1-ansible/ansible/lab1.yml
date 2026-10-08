@@ -1,0 +1,31 @@
+---
+- name: NBD Laboratory 1 - MongoDB Operation and Administration
+  hosts: mongodb
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: mongodb
+    - role: rbac
+    - role: backup
+    - role: monitoring
+
+  tasks:
+    # Operational tasks below never run in a normal pass; call them by tag.
+    - name: Control MongoDB service (start, stop, restart or status)
+      ansible.builtin.import_tasks: roles/mongodb/tasks/service.yml
+      tags:
+        - never
+        - part1_service
+
+    - name: Demonstrate MongoDB stop, start, restart and autostart
+      ansible.builtin.import_tasks: roles/mongodb/tasks/service_demo.yml
+      tags:
+        - never
+        - part1_service_demo
+
+    - name: Restore data from a chosen backup archive
+      ansible.builtin.import_tasks: roles/backup/tasks/restore_archive.yml
+      tags:
+        - never
+        - part3_restore_archive
